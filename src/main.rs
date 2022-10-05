@@ -10,8 +10,7 @@ use args::Args;
 
 use kademlia_dht::{Key, Node, NodeData};
 use sha3::{Digest, Sha3_256};
-use std::thread;
-use std::time::Duration;
+use std::io;
 
 fn main() {
     let mut args = Args::new("Kademlia DHT", "Kademlia DHT implementation");
@@ -34,7 +33,7 @@ fn main() {
         exit(1);
     }
 
-    let mut node = match remote.clone() {
+    let mut node = match remote {
         None => Node::new(listen[0], listen[1], None),
         Some(remote_str) => {
             let remote_addr_hash_vec = sha3::Sha3_256::digest(remote_str.as_bytes()).as_slice().to_vec();
@@ -45,32 +44,49 @@ fn main() {
         }
     };
 
-    let key = get_key("Hello");
-    let value = "World";
+    println!("Commands");
+    println!("\"I key value\" => store key value");
+    println!("\"G key\" => get key");
+    println!("\"Q\" => Quit");
+    let stdin = io::stdin();
+    let mut command_buffer = String::new();
 
-    if remote.is_none() {
-        node.insert(key, value);
+    loop {
+        stdin.read_line(&mut command_buffer).expect("Failed to read line");
+        let command : Vec<&str> = command_buffer.trim().split(" ").collect();
+
+        match command[0] {
+            "I" => {
+                if command.len() != 3 {
+                    println!("Invalid command");
+                    command_buffer.clear();
+                    continue;
+                }
+                let key_hash_vec = Sha3_256::digest(command[1].as_bytes()).as_slice().to_vec();
+                let key = Key::new(<[u8; 32]>::try_from(key_hash_vec).unwrap());
+                node.insert(key, command[2]);
+            }
+            "G" => {
+                if command.len() != 2 {
+                    println!("Invalid command");
+                    command_buffer.clear();
+                    continue;
+                }
+                let key_hash_vec = Sha3_256::digest(command[1].as_bytes()).as_slice().to_vec();
+                let key = Key::new(<[u8; 32]>::try_from(key_hash_vec).unwrap());
+                match node.get(&key) {
+                    Some(value) => println!("{}", value),
+                    None => println!("Not found"),
+                }
+            }
+            "Q" => {
+                println!("Quitting...");
+                break;
+            }
+            _ => {
+                println!("Invalid command");
+            }
+        }
+        command_buffer.clear();
     }
-
-    thread::sleep(Duration::from_millis(5000));
-
-    let result = node.get(&key);
-    println!("Result: {:?}", result);
-    thread::sleep(Duration::from_millis(5000));
-
-    node.kill();
-}
-
-fn clone_into_array<A, T>(slice: &[T]) -> A
-    where
-        A: Sized + Default + AsMut<[T]>,
-        T: Clone,
-{
-    let mut a = Default::default();
-    <A as AsMut<[T]>>::as_mut(&mut a).clone_from_slice(slice);
-    a
-}
-
-fn get_key(key: &str) -> Key {
-    Key(clone_into_array(Sha3_256::digest(key.as_bytes()).as_slice()))
 }
